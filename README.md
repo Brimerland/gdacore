@@ -1,0 +1,2 @@
+# gdacore
+GDA Multipurpose Library
