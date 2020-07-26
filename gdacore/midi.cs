@@ -6,7 +6,7 @@ namespace Gda
 {
     public class MidiIn
     {
-        //snd_rawmidi_open(&handle_midi_in, &handle_midi_out, "hw:3,0,0", 0 );
+#if Linux
         [DllImport("libasound.so", CallingConvention = CallingConvention.Cdecl)]
         public static extern int snd_rawmidi_open(ref IntPtr handle_midi_in, ref IntPtr handle_midi_out, string deviceId, int mode);
         [DllImport("libasound.so", CallingConvention = CallingConvention.Cdecl)]
@@ -17,12 +17,12 @@ namespace Gda
         public static extern int snd_rawmidi_read([In] IntPtr handle, [Out] byte[] buffer, int count);
         [DllImport("libasound.so", CallingConvention = CallingConvention.Cdecl)]
         public static extern int snd_rawmidi_write([In] IntPtr handle, [In] byte[] buffer, int count);
-
+#endif
 
         static public MidiIn Create()
         {
             MidiIn result = null;
-
+#if Linux
             var handle_in = IntPtr.Zero;
             
             var err = snd_rawmidi_open(ref handle_in, IntPtr.Zero, "hw:3,0,0", 0);
@@ -61,7 +61,7 @@ namespace Gda
                 }
             }
 
-
+#endif
             return result;
         } 
     }
