@@ -8,6 +8,9 @@ namespace gdacore
         {
             Console.WriteLine("Hello World! " + Gda.Dingens.SomeString);
             Gda.MidiIn.Create();
+
+            var conn = new Gda.Streams.Connection();
+
         }
     }
 }
