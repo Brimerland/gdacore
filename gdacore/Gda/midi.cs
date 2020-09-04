@@ -36,7 +36,9 @@ namespace Gda
 #if Linux
             var handle_in = IntPtr.Zero;
             
-            var err = MidiIn.snd_rawmidi_open(ref handle_in, IntPtr.Zero, "hw:3,0,0", 0);
+            var err = MidiIn.snd_rawmidi_open(ref handle_in, IntPtr.Zero, 
+		"hw:1,0,0", // "hw:3,0,0"
+		0);
 
             if (err == 0)
             {

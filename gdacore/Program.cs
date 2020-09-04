@@ -29,9 +29,9 @@ namespace gdacore
                 sconsumer.ConnectDown(new SocketTerminal());
                 _ = ssource.StartReceiveAsync();
 
-                var msource = new MidiSource();
-                msource.ConnectDown(bbCon);
-                _= msource.RunAsync();
+                //var msource = new MidiSource();
+                //msource.ConnectDown(bbCon);
+                //_= msource.RunAsync();
             }
             catch (Exception e)
             {}
@@ -114,6 +114,11 @@ namespace gdacore
                 var inCon = socketPair.Item1;
                 inCon.ConnectDown(new DownTerminal());
                 _ = inCon.StartReceiveAsync();
+                
+                var outCon = socketPair.Item2;
+                var msource = new MidiSource();
+                msource.ConnectDown(outCon);
+                _= msource.RunAsync();
             }
         }
 
