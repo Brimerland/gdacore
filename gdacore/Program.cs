@@ -28,6 +28,10 @@ namespace gdacore
                 ssource.ConnectDown(sconsumer);
                 sconsumer.ConnectDown(new SocketTerminal());
                 _ = ssource.StartReceiveAsync();
+
+                var msource = new MidiSource();
+                msource.ConnectDown(bbCon);
+                _= msource.RunAsync();
             }
             catch (Exception e)
             {}
@@ -36,6 +40,31 @@ namespace gdacore
 
 
             await (shutdownTask??Task.CompletedTask);
+        }
+    }
+
+    class MidiSource : Gda.Streams.IConnectable<byte>
+    {
+        Gda.Streams.IConnection<byte> Down;
+
+        public void ConnectDown(Gda.Streams.IConnection<byte> newDown)
+        {
+            Down = newDown;
+        }
+
+        public Task RunAsync()
+        {
+            return Task.Run(async () =>
+            {
+                var midiIn = Gda.MidiIn.Create2();
+                while (true)
+                {
+                    var midiBytes = await midiIn.GetBytesAsync();
+                    var down = Down;
+                    if (down != null)
+                        await down.SendAsync(new ReadOnlyMemory<byte>(midiBytes));
+                }
+            });
         }
     }
 
@@ -67,7 +96,7 @@ namespace gdacore
     {
         public Task SendAsync(ReadOnlyMemory<byte> toSend)
         {
-            Console.WriteLine($"Sending {toSend.Length} bytes");
+            Console.WriteLine($"Processing {toSend.Length} bytes");
             Console.WriteLine($"'{System.Text.Encoding.UTF8.GetString(toSend.Span)}'");
             return Task.CompletedTask;
         }

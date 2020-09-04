@@ -1,6 +1,9 @@
+#define Linux
+
 using System;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using System.Threading.Tasks.Dataflow;
 
 namespace Gda
 {
@@ -18,6 +21,50 @@ namespace Gda
         [DllImport("libasound.so", CallingConvention = CallingConvention.Cdecl)]
         public static extern int snd_rawmidi_write([In] IntPtr handle, [In] byte[] buffer, int count);
 #endif
+        static public MidiIn Create2()
+        {
+            var result = new MidiIn();
+            result.StartThread();
+            return result;
+        }
+        BufferBlock<byte[]> BufferBlock = new BufferBlock<byte[]>();
+        System.Threading.Thread Thread;
+        void StartThread()
+        {
+
+            Thread = new System.Threading.Thread(() => {
+#if Linux
+            var handle_in = IntPtr.Zero;
+            
+            var err = MidiIn.snd_rawmidi_open(ref handle_in, IntPtr.Zero, "hw:3,0,0", 0);
+
+            if (err == 0)
+            {
+                var buf = new byte[1024];
+                var bufMem = new Memory<byte>(buf);
+                while (true)
+                {
+                    var readBytes = snd_rawmidi_read(handle_in, buf, buf.Length);
+                    var newBuf = new byte[readBytes];
+                    bufMem.Slice(0,readBytes).CopyTo(new Memory<byte>(newBuf));
+                    BufferBlock.Post(newBuf);
+                }
+            }
+#endif
+            });
+
+            Thread.Start();
+        }
+
+        public async Task<byte[]> GetBytesAsync()
+        {
+            byte[] result = null;
+            
+            if (await BufferBlock.OutputAvailableAsync())
+                BufferBlock.TryReceive(out result);
+
+            return result;
+        }
 
         static public MidiIn Create()
         {
