@@ -176,6 +176,31 @@ namespace Gda.Streams
         }
     }
 
+    class SocketSourceClient : IConnectable<Socket>
+    {
+        IConnection<Socket> Down;
+        public void ConnectDown(IConnection<Socket> newDown)
+        {
+            Down = newDown;
+        }
+
+        public Task StartReceiveAsync()
+        {
+            return Task.Run(async () => 
+            {
+                var socket = new Socket(AddressFamily.InterNetwork,
+                                     SocketType.Stream,
+                                     ProtocolType.Tcp);
+
+                // start listening
+                await socket.ConnectAsync(new IPEndPoint(IPAddress.Parse("192.168.178.59"), 1704));
+                var down = Down;
+                if (down != null)
+                    _ = down.SendAsync(new ReadOnlyMemory<Socket>(new Socket[] { socket }));
+            });
+        }
+    }
+
     class SocketConsumer : IConnection<Socket>, IConnectable<(SocketConnectionIn, SocketConnectionOut)>
     {
         IConnection<(SocketConnectionIn, SocketConnectionOut)> Down;

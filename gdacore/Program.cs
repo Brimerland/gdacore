@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using System.Linq;
 
 namespace gdacore
 {
@@ -14,24 +15,40 @@ namespace gdacore
 
             try
             {
-                var conn = new Gda.Streams.Connection();
-                var bbCon = new Gda.Streams.BufferBlockConnection<byte>();
-                bbCon.ConnectDown(new DownTerminal());
-                await bbCon.SendAsync(new ReadOnlyMemory<byte>(new byte[255]));
-                shutdownTask = bbCon.WhenShutdownAsync();
-                var downSource = new DownSource();
-                downSource.ConnectDown(bbCon);
-                _= downSource.RunAsync();
+                if (args.Any(s => s == "client"))
+                {
+                    Console.WriteLine("Running as client");
+                    
+                    var ssource = new Gda.Streams.SocketSourceClient();
+                    var sconsumer = new Gda.Streams.SocketConsumer();
+                    ssource.ConnectDown(sconsumer);
+                    sconsumer.ConnectDown(new SocketTerminal());
+                    _ = ssource.StartReceiveAsync();
 
-                var ssource = new Gda.Streams.SocketSource();
-                var sconsumer = new Gda.Streams.SocketConsumer();
-                ssource.ConnectDown(sconsumer);
-                sconsumer.ConnectDown(new SocketTerminal());
-                _ = ssource.StartReceiveAsync();
+                    await Task.Delay(100000);
 
-                //var msource = new MidiSource();
-                //msource.ConnectDown(bbCon);
-                //_= msource.RunAsync();
+                }
+                else
+                {
+                    var conn = new Gda.Streams.Connection();
+                    var bbCon = new Gda.Streams.BufferBlockConnection<byte>();
+                    bbCon.ConnectDown(new DownTerminal());
+                    await bbCon.SendAsync(new ReadOnlyMemory<byte>(new byte[255]));
+                    shutdownTask = bbCon.WhenShutdownAsync();
+                    var downSource = new DownSource();
+                    downSource.ConnectDown(bbCon);
+                    _= downSource.RunAsync();
+
+                    var ssource = new Gda.Streams.SocketSource();
+                    var sconsumer = new Gda.Streams.SocketConsumer();
+                    ssource.ConnectDown(sconsumer);
+                    sconsumer.ConnectDown(new SocketTerminal());
+                    _ = ssource.StartReceiveAsync();
+
+                    //var msource = new MidiSource();
+                    //msource.ConnectDown(bbCon);
+                    //_= msource.RunAsync();
+                }
             }
             catch (Exception e)
             {}
