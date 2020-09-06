@@ -19,12 +19,15 @@ namespace gdacore
                 {
                     Console.WriteLine("Running as client");
                     
+                    var echoDelayed = new EchoDelayed();
                     var ssource = new Gda.Streams.SocketSourceClient();
                     var sconsumer = new Gda.Streams.SocketConsumer();
                     ssource.ConnectDown(sconsumer);
                     sconsumer.ConnectDown(new SocketTerminal(){
-                        InSink = new DownTerminal()
+                        InSink = echoDelayed,
+                        OutSource = echoDelayed,
                     });
+
                     _ = ssource.StartReceiveAsync();
 
                     await Task.Delay(100000);
@@ -143,6 +146,32 @@ namespace gdacore
                 var outCon = socketPair.Item2;
                 OutSource?.ConnectDown(outCon);
             }
+        }
+
+        public Task WhenShutdownAsync() => null;
+    }
+
+    class EchoDelayed : Gda.Streams.IConnection<byte>, Gda.Streams.IConnectable<byte>
+    {
+        Gda.Streams.IConnection<byte> Down;
+        public void ConnectDown(Gda.Streams.IConnection<byte> newDown)
+        {
+            Down = newDown;
+        }
+
+        public Task SendAsync(ReadOnlyMemory<byte> toSend)
+        {
+            var bufMem = new Memory<byte>(new byte[toSend.Length]);
+            toSend.CopyTo(bufMem);
+
+            _ = Task.Run(async () => {
+                await Task.Delay(1000);
+                var down = Down;
+                if (down != null)
+                    _ = down.SendAsync(bufMem);
+            });
+
+            return Task.CompletedTask;
         }
 
         public Task WhenShutdownAsync() => null;
