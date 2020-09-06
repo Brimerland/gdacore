@@ -22,7 +22,9 @@ namespace gdacore
                     var ssource = new Gda.Streams.SocketSourceClient();
                     var sconsumer = new Gda.Streams.SocketConsumer();
                     ssource.ConnectDown(sconsumer);
-                    sconsumer.ConnectDown(new SocketTerminal());
+                    sconsumer.ConnectDown(new SocketTerminal(){
+                        InSink = new DownTerminal()
+                    });
                     _ = ssource.StartReceiveAsync();
 
                     await Task.Delay(100000);
@@ -41,13 +43,14 @@ namespace gdacore
 
                     var ssource = new Gda.Streams.SocketSource();
                     var sconsumer = new Gda.Streams.SocketConsumer();
+                    
                     ssource.ConnectDown(sconsumer);
-                    sconsumer.ConnectDown(new SocketTerminal());
+                    sconsumer.ConnectDown(new SocketTerminal(){
+                        InSink = new DownTerminal(),
+                        OutSource = new MidiSource()
+                    });
+                    
                     _ = ssource.StartReceiveAsync();
-
-                    //var msource = new MidiSource();
-                    //msource.ConnectDown(bbCon);
-                    //_= msource.RunAsync();
                 }
             }
             catch (Exception e)
@@ -123,19 +126,20 @@ namespace gdacore
 
     class SocketTerminal : Gda.Streams.IConnection<(Gda.Streams.SocketConnectionIn, Gda.Streams.SocketConnectionOut)>
     {
+        public Gda.Streams.IConnectable<byte> OutSource;
+        public Gda.Streams.IConnection<byte> InSink;
+
 
         public async Task SendAsync(ReadOnlyMemory<(Gda.Streams.SocketConnectionIn, Gda.Streams.SocketConnectionOut)> toSend)
         {
             foreach(var socketPair in toSend.ToArray())
             {
                 var inCon = socketPair.Item1;
-                inCon.ConnectDown(new DownTerminal());
+                inCon.ConnectDown(InSink);
                 _ = inCon.StartReceiveAsync();
                 
                 var outCon = socketPair.Item2;
-                var msource = new MidiSource();
-                msource.ConnectDown(outCon);
-                _= msource.RunAsync();
+                OutSource?.ConnectDown(outCon);
             }
         }
 
