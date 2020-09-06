@@ -20,17 +20,22 @@ namespace gdacore
                     Console.WriteLine("Running as client");
                     
                     var echoDelayed = new EchoDelayed();
+                    var proxyOut = new ProxyDown() { Message = "Sending" };
+                    echoDelayed.ConnectDown(proxyOut);
+                    var proxyIn = new ProxyDown() { Message = "Received" };
+                    proxyIn.ConnectDown(echoDelayed);
+
                     var ssource = new Gda.Streams.SocketSourceClient();
                     var sconsumer = new Gda.Streams.SocketConsumer();
                     ssource.ConnectDown(sconsumer);
                     sconsumer.ConnectDown(new SocketTerminal(){
-                        InSink = echoDelayed,
-                        OutSource = echoDelayed,
+                        InSink = proxyIn,
+                        OutSource = proxyOut,
                     });
 
                     _ = ssource.StartReceiveAsync();
 
-                    await Task.Delay(100000);
+                    await Task.Delay(10000000);
 
                 }
                 else
@@ -182,6 +187,25 @@ namespace gdacore
             });
 
             return Task.CompletedTask;
+        }
+
+        public Task WhenShutdownAsync() => null;
+    }
+
+    class ProxyDown : Gda.Streams.IConnection<byte>, Gda.Streams.IConnectable<byte>
+    {
+        public String Message = "";
+
+        Gda.Streams.IConnection<byte> Down;
+        public void ConnectDown(Gda.Streams.IConnection<byte> newDown)
+        {
+            Down = newDown;
+        }
+
+        public Task SendAsync(ReadOnlyMemory<byte> toSend)
+        {
+            Console.WriteLine($"{Message} '{System.Text.Encoding.UTF8.GetString(toSend.Span)}'");
+            return Down?.SendAsync(toSend) ?? Task.CompletedTask;
         }
 
         public Task WhenShutdownAsync() => null;
