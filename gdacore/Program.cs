@@ -44,11 +44,13 @@ namespace gdacore
                     var ssource = new Gda.Streams.SocketSource();
                     var sconsumer = new Gda.Streams.SocketConsumer();
                     
+                    var midiSource = new MidiSource();
                     ssource.ConnectDown(sconsumer);
                     sconsumer.ConnectDown(new SocketTerminal(){
                         InSink = new DownTerminal(),
-                        OutSource = new MidiSource()
+                        OutSource = midiSource
                     });
+                    _ = midiSource.RunAsync();
                     
                     _ = ssource.StartReceiveAsync();
                 }
