@@ -29,6 +29,8 @@ namespace Gda
         }
         BufferBlock<byte[]> BufferBlock = new BufferBlock<byte[]>();
         System.Threading.Thread Thread;
+
+        IntPtr handle_out = IntPtr.Zero;
         void StartThread()
         {
 
@@ -36,7 +38,7 @@ namespace Gda
 #if Linux
             var handle_in = IntPtr.Zero;
             
-            var err = MidiIn.snd_rawmidi_open(ref handle_in, IntPtr.Zero, 
+            var err = MidiIn.snd_rawmidi_open(ref handle_in, ref handle_out, 
 		"hw:1,0,0", // "hw:3,0,0"
 		0);
 
@@ -66,6 +68,15 @@ namespace Gda
                 BufferBlock.TryReceive(out result);
 
             return result;
+        }
+
+        public void WriteBytes(ReadOnlyMemory<byte> toWrite)
+        {
+            if (handle_out != IntPtr.Zero)
+            {
+                var buf = toWrite.ToArray();
+                snd_rawmidi_write(handle_out, buf, buf.Length);
+            }
         }
 
         static public MidiIn Create()

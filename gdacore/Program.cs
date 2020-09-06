@@ -50,7 +50,7 @@ namespace gdacore
                     var midiSource = new MidiSource();
                     ssource.ConnectDown(sconsumer);
                     sconsumer.ConnectDown(new SocketTerminal(){
-                        InSink = new DownTerminal(),
+                        InSink = midiSource,
                         OutSource = midiSource
                     });
                     _ = midiSource.RunAsync();
@@ -68,7 +68,7 @@ namespace gdacore
         }
     }
 
-    class MidiSource : Gda.Streams.IConnectable<byte>
+    class MidiSource : Gda.Streams.IConnectable<byte>, Gda.Streams.IConnection<byte>
     {
         Gda.Streams.IConnection<byte> Down;
 
@@ -77,11 +77,13 @@ namespace gdacore
             Down = newDown;
         }
 
+        Gda.MidiIn midiIn;
+
         public Task RunAsync()
         {
             return Task.Run(async () =>
             {
-                var midiIn = Gda.MidiIn.Create2();
+                midiIn = Gda.MidiIn.Create2();
                 while (true)
                 {
                     var midiBytes = await midiIn.GetBytesAsync();
@@ -91,6 +93,14 @@ namespace gdacore
                 }
             });
         }
+
+        public Task SendAsync(ReadOnlyMemory<byte> toSend)
+        {
+            midiIn?.WriteBytes(toSend);
+            return Task.CompletedTask;
+        }
+
+        public Task WhenShutdownAsync() => null;
     }
 
     class DownSource : Gda.Streams.IConnectable<byte>
