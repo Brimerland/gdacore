@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using System.Linq;
+using System.Text;
 
 namespace gdacore
 {
@@ -22,6 +23,11 @@ namespace gdacore
                     var echoDelayed = new EchoDelayed();
                     var proxyOut = new ProxyDown() { Message = "Sending" };
                     echoDelayed.ConnectDown(proxyOut);
+
+                    var midiGen = new MidiGenerator();
+                    midiGen.ConnectDown(proxyOut);
+                    _ = midiGen.RunAsync();
+
                     var proxyIn = new ProxyDown() { Message = "Received" };
                     proxyIn.ConnectDown(echoDelayed);
 
@@ -204,10 +210,47 @@ namespace gdacore
 
         public Task SendAsync(ReadOnlyMemory<byte> toSend)
         {
-            Console.WriteLine($"{Message} '{System.Text.Encoding.UTF8.GetString(toSend.Span)}'");
+            var sb = new StringBuilder();
+            foreach(var b in toSend.ToArray())
+                sb.Append($"{b} ");
+            Console.WriteLine($"{Message} '{sb.ToString()}'");
             return Down?.SendAsync(toSend) ?? Task.CompletedTask;
         }
 
         public Task WhenShutdownAsync() => null;
+    }
+
+    class MidiGenerator : Gda.Streams.IConnectable<byte>
+    {
+        Gda.Streams.IConnection<byte> Down;
+        public void ConnectDown(Gda.Streams.IConnection<byte> newDown)
+        {
+            Down = newDown;
+        }
+
+        public async Task RunAsync()
+        {
+            var seq = new byte[] { 35, 42, 38, 42 };
+            byte note = 0;
+            int counter = 0;
+            while (true)
+            {
+                var down = Down;
+                if (down != null)
+                {
+                    var oldNote = note;
+                    note = seq[counter % seq.Length]; // base / snare
+
+                    _ = down.SendAsync(new Memory<byte>(new byte[] {0xb1, 0, 0x7f, // channel 1 bank select 127 (msb)
+                                                                    0xc1, 88,      // channel 1 program 88 (power kit on bank 127/0)
+                                                                    0x91, oldNote, 0, 0x91, note, 61}));
+                }
+                
+                counter ++;
+
+                await Task.Delay(250);
+            }
+        }
+         
     }
 }
