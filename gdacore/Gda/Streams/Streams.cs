@@ -20,8 +20,6 @@ namespace Gda.Streams
     interface IConnection<T>
     {
         Task SendAsync(ReadOnlyMemory<T> toSend);
-
-        Task WhenShutdownAsync();
     }
 
     interface IConnectable<T>
@@ -36,8 +34,6 @@ namespace Gda.Streams
 
         Task SendLoopTask;
         TaskCompletionSource<bool> TCS_Shutdown = new System.Threading.Tasks.TaskCompletionSource<bool>();
-
-        public Task WhenShutdownAsync() => TCS_Shutdown.Task;
 
         public void ConnectDown(IConnection<T> newDown)
         {
@@ -114,8 +110,6 @@ namespace Gda.Streams
         {
             await Socket.SendAsync(toSend, SocketFlags.None);
         }
-
-        public Task WhenShutdownAsync() => null;
     }
 
     class SocketConnectionIn : IConnectable<byte>
@@ -225,7 +219,5 @@ namespace Gda.Streams
 
             return Task.CompletedTask;
         }
-
-        public Task WhenShutdownAsync() => null;
     }
 }

@@ -9,10 +9,19 @@ namespace gdacore
     {
         static async Task Main(string[] args)
         {
+            if (args.Any(s => s == "test1"))
+                await Test1(args);
+            else
+                await Main2(args);
+        }
+
+        static async Task Main2(string[] args)
+        {
             Console.WriteLine("Hello World! " + Gda.Dingens.SomeString);
             //Gda.MidiIn.Create();
 
-            Task shutdownTask = null;
+            var tcs_neverend = new TaskCompletionSource<bool>();
+            var shutdownTask = tcs_neverend.Task;
 
             try
             {
@@ -40,9 +49,6 @@ namespace gdacore
                     });
 
                     _ = ssource.StartReceiveAsync();
-
-                    await Task.Delay(10000000);
-
                 }
                 else
                 {
@@ -50,7 +56,6 @@ namespace gdacore
                     var bbCon = new Gda.Streams.BufferBlockConnection<byte>();
                     bbCon.ConnectDown(new DownTerminal());
                     await bbCon.SendAsync(new ReadOnlyMemory<byte>(new byte[255]));
-                    shutdownTask = bbCon.WhenShutdownAsync();
                     var downSource = new DownSource();
                     downSource.ConnectDown(bbCon);
                     _= downSource.RunAsync();
@@ -75,7 +80,12 @@ namespace gdacore
             {}
 
 
-            await (shutdownTask??Task.CompletedTask);
+            await shutdownTask;
+        }
+
+        static async Task Test1(string[] args)
+        {
+            
         }
     }
 
@@ -252,5 +262,34 @@ namespace gdacore
             }
         }
          
+    }
+
+
+
+    class FakeProtokolSource : Gda.Streams.IConnectable<byte>, Gda.Streams.IConnection<byte>
+    {
+        Gda.Streams.IConnection<byte> Down;
+
+        public void ConnectDown(Gda.Streams.IConnection<byte> newDown)
+        {
+            Down = newDown;
+        }
+
+        public async Task RunAsync()
+        {
+            var down = Down;
+
+            if (down != null)
+            {
+                await Task.Delay(1000);
+                await down.SendAsync(new Memory<byte>(Encoding.UTF8.GetBytes("/TestCommand/")));
+
+            }
+        }
+
+        public Task SendAsync(ReadOnlyMemory<byte> toSend)
+        {
+            return Task.CompletedTask;
+        }
     }
 }
