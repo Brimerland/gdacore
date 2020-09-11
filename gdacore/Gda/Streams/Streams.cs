@@ -19,12 +19,17 @@ namespace Gda.Streams
 
     interface IConsumer<T>
     {
-        Task ConsumeAsync(ReadOnlyMemory<T> toConsume);
+        ValueTask<int> ConsumeAsync(ReadOnlyMemory<T> toConsume);
     }
 
     interface IProducer<T>
     {
         void AttachConsumer(IConsumer<T> newConsumer);
+    }
+
+    interface IProducerPassive<T>
+    {
+        Task<T> GetProductAsync();
     }
 
     interface IConsumer2<T>
@@ -47,7 +52,7 @@ namespace Gda.Streams
         }
 
         public Task<(IProducer2<T>, T)> GetAsync() 
-            => getTask;        
+            => getTask;
     }
 
     interface IConsumer3<T>
@@ -93,7 +98,7 @@ namespace Gda.Streams
             Down = newDown;
         }
 
-        public Task ConsumeAsync(ReadOnlyMemory<T> toSend)
+        public async ValueTask<int> ConsumeAsync(ReadOnlyMemory<T> toSend)
         {
             if (SendLoopTask == null)
             {
@@ -104,7 +109,7 @@ namespace Gda.Streams
                 }
             }
 
-            return OutBufferBlock.SendAsync(toSend);
+            return await OutBufferBlock.SendAsync(toSend) ? -1 : toSend.Length;
         }
 
         async Task SendLoopAsync(Task shutdownTask)
@@ -159,9 +164,9 @@ namespace Gda.Streams
     {
         public Socket Socket;
         
-        public async Task ConsumeAsync(ReadOnlyMemory<byte> toSend)
+        public ValueTask<int> ConsumeAsync(ReadOnlyMemory<byte> toSend)
         {
-            await Socket.SendAsync(toSend, SocketFlags.None);
+            return Socket.SendAsync(toSend, SocketFlags.None);
         }
     }
 
@@ -257,7 +262,7 @@ namespace Gda.Streams
             Down = newDown;
         }
 
-        public Task ConsumeAsync(ReadOnlyMemory<Socket> toSend)
+        public ValueTask<int> ConsumeAsync(ReadOnlyMemory<Socket> toSend)
         {
             foreach(var socket in toSend.ToArray())
             {
@@ -270,7 +275,7 @@ namespace Gda.Streams
                     socket.Close();
             }
 
-            return Task.CompletedTask;
+            return new ValueTask<int>(-1);
         }
     }
 }

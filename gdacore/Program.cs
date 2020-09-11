@@ -2,6 +2,8 @@
 using System.Threading.Tasks;
 using System.Linq;
 using System.Text;
+using Gda.Streams;
+using System.Collections.Generic;
 
 namespace gdacore
 {
@@ -87,6 +89,24 @@ namespace gdacore
         {
             {
                 var buf = new ReadOnlyMemory<byte>(Encoding.UTF8.GetBytes(new string("0123456789abcdefghijklmnopqrstuvwxyz".Reverse().ToArray())));
+                var step = 7;
+                var pos = 0;
+                var chunks = new List<ReadOnlyMemory<byte>>();
+                while (pos < buf.Length)
+                {
+                    var len = Math.Min(step, buf.Length - pos);
+                    chunks.Add(buf.Slice(pos, len));
+                    pos += len;
+                }
+
+                var httpConsumer = new HTTPConsumer();
+                chunks.Reverse();
+                foreach (var chunk in chunks)
+                    await httpConsumer.ConsumeAsync(chunk);
+            }
+
+            {
+                var buf = new ReadOnlyMemory<byte>(Encoding.UTF8.GetBytes(new string("0123456789abcdefghijklmnopqrstuvwxyz".Reverse().ToArray())));
                 Gda.Streams.ExtraProducer2<ReadOnlyMemory<byte>> producer = null;
 
                 var step = 7;
@@ -99,7 +119,7 @@ namespace gdacore
                 }
 
                 
-                var httpConsumer = new HTTPConsumer();
+                var httpConsumer = new HTTPConsumer2();
                 await httpConsumer.ConsumeFromAsync(producer);
             }
 
@@ -158,10 +178,10 @@ namespace gdacore
             });
         }
 
-        public Task ConsumeAsync(ReadOnlyMemory<byte> toSend)
+        public ValueTask<int> ConsumeAsync(ReadOnlyMemory<byte> toSend)
         {
             midiIn?.WriteBytes(toSend);
-            return Task.CompletedTask;
+            return new ValueTask<int>(-1);
         }
 
         public Task WhenShutdownAsync() => null;
@@ -193,14 +213,12 @@ namespace gdacore
 
     class DownTerminal : Gda.Streams.IConsumer<byte>
     {
-        public Task ConsumeAsync(ReadOnlyMemory<byte> toSend)
+        public ValueTask<int> ConsumeAsync(ReadOnlyMemory<byte> toSend)
         {
             Console.WriteLine($"Processing {toSend.Length} bytes");
             Console.WriteLine($"'{System.Text.Encoding.UTF8.GetString(toSend.Span)}'");
-            return Task.CompletedTask;
+            return new ValueTask<int>(-1);
         }
-
-        public Task WhenShutdownAsync() => null;
     }
 
     class SocketTerminal : Gda.Streams.IConsumer<(Gda.Streams.SocketConnectionIn, Gda.Streams.SocketConnectionOut)>
@@ -209,7 +227,7 @@ namespace gdacore
         public Gda.Streams.IConsumer<byte> InSink;
 
 
-        public async Task ConsumeAsync(ReadOnlyMemory<(Gda.Streams.SocketConnectionIn, Gda.Streams.SocketConnectionOut)> toSend)
+        public ValueTask<int> ConsumeAsync(ReadOnlyMemory<(Gda.Streams.SocketConnectionIn, Gda.Streams.SocketConnectionOut)> toSend)
         {
             foreach(var socketPair in toSend.ToArray())
             {
@@ -220,6 +238,8 @@ namespace gdacore
                 var outCon = socketPair.Item2;
                 OutSource?.AttachConsumer(outCon);
             }
+
+            return new ValueTask<int>();
         }
 
         public Task WhenShutdownAsync() => null;
@@ -233,7 +253,7 @@ namespace gdacore
             Down = newDown;
         }
 
-        public Task ConsumeAsync(ReadOnlyMemory<byte> toSend)
+        public ValueTask<int> ConsumeAsync(ReadOnlyMemory<byte> toSend)
         {
             var bufMem = new Memory<byte>(new byte[toSend.Length]);
             toSend.CopyTo(bufMem);
@@ -245,7 +265,7 @@ namespace gdacore
                     _ = down.ConsumeAsync(bufMem);
             });
 
-            return Task.CompletedTask;
+            return new ValueTask<int>(-1);
         }
 
         public Task WhenShutdownAsync() => null;
@@ -261,13 +281,13 @@ namespace gdacore
             Down = newDown;
         }
 
-        public Task ConsumeAsync(ReadOnlyMemory<byte> toSend)
+        public ValueTask<int> ConsumeAsync(ReadOnlyMemory<byte> toSend)
         {
             var sb = new StringBuilder();
             foreach(var b in toSend.ToArray())
                 sb.Append($"{b} ");
             Console.WriteLine($"{Message} '{sb.ToString()}'");
-            return Down?.ConsumeAsync(toSend) ?? Task.CompletedTask;
+            return Down?.ConsumeAsync(toSend) ?? new ValueTask<int>(-1);
         }
 
         public Task WhenShutdownAsync() => null;
@@ -329,18 +349,83 @@ namespace gdacore
             }
         }
 
-        public Task ConsumeAsync(ReadOnlyMemory<byte> toSend)
+        public ValueTask<int> ConsumeAsync(ReadOnlyMemory<byte> toSend)
         {
             Console.WriteLine($"Received {Encoding.UTF8.GetString(toSend.Span)}");
-            return Task.CompletedTask;
+            return new ValueTask<int>(-1);
         }
     }
 
-    class HTTPConsumer : Gda.Streams.IConsumer2<ReadOnlyMemory<byte>>
+    class HTTPConsumer : Gda.Streams.IConsumer<byte>
+    {
+        HTTPHeaderParser Parser;
+        HTTPHeader Header;
+        public async ValueTask<int> ConsumeAsync(ReadOnlyMemory<byte> toConsume)
+        {
+            if (Header == null)
+            {
+                if (Parser == null)
+                    Parser = new HTTPHeaderParser();
+                
+                var consumed = await Parser.ConsumeAsync(toConsume);
+                if (consumed > -1)
+                {
+                    toConsume = toConsume.Slice(consumed);
+                    Header = await Parser.GetProductAsync();
+                    Console.WriteLine("Header done.");
+                }
+            }
+            
+            if (Header != null)
+            { 
+                
+                Console.WriteLine($"Read {Encoding.UTF8.GetString(toConsume.Span)}");
+            }
+
+            return -1;
+        }
+
+    }
+
+    class HTTPHeaderParser : Gda.Streams.IConsumer<byte>, Gda.Streams.IProducerPassive<HTTPHeader>
+    {
+        TaskCompletionSource<HTTPHeader> TCS = new TaskCompletionSource<HTTPHeader>();
+        int count = 0;
+        public ValueTask<int> ConsumeAsync(ReadOnlyMemory<byte> toConsume)
+        {
+            var result = toConsume.Length;
+
+            try
+            {
+                if (count < 10)
+                {
+                    count += toConsume.Length;
+                    if (count >= 10)
+                    {
+                        result = toConsume.Length - ( count - 10 );
+                        TCS.SetResult(new HTTPHeader());
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                TCS.TrySetException(e);
+            }
+
+            return new ValueTask<int>(count < 10 ? -1 : result );
+        }
+
+        public Task<HTTPHeader> GetProductAsync()
+        {
+            return TCS.Task;
+        }
+    }
+
+    class HTTPConsumer2 : Gda.Streams.IConsumer2<ReadOnlyMemory<byte>>
     {
         public async Task ConsumeFromAsync(Gda.Streams.IProducer2<ReadOnlyMemory<byte>> producer)
         {
-            var parser = new HTTPHeaderParser();
+            var parser = new HTTPHeaderParser2();
             var consumeTask = parser.ConsumeFromAsync(producer);
             var headerTask =  parser.GetAsync();
             var completedTask = await Task.WhenAny(consumeTask, headerTask);
@@ -363,7 +448,7 @@ namespace gdacore
         }
     }
 
-    class HTTPHeaderParser : Gda.Streams.IConsumer2<ReadOnlyMemory<byte>>, Gda.Streams.IProducer2<(HTTPHeader, Gda.Streams.IProducer2<ReadOnlyMemory<byte>>)>
+    class HTTPHeaderParser2 : Gda.Streams.IConsumer2<ReadOnlyMemory<byte>>, Gda.Streams.IProducer2<(HTTPHeader, Gda.Streams.IProducer2<ReadOnlyMemory<byte>>)>
     {
         TaskCompletionSource<(Gda.Streams.IProducer2<(HTTPHeader, Gda.Streams.IProducer2<ReadOnlyMemory<byte>>)>, (HTTPHeader, Gda.Streams.IProducer2<ReadOnlyMemory<byte>>))> TCS 
             = new TaskCompletionSource<(Gda.Streams.IProducer2<(HTTPHeader, Gda.Streams.IProducer2<ReadOnlyMemory<byte>>)>, (HTTPHeader, Gda.Streams.IProducer2<ReadOnlyMemory<byte>>))>();
