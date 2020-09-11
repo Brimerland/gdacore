@@ -17,30 +17,83 @@ namespace Gda.Streams
     {
     }
 
-    interface IConnection<T>
+    interface IConsumer<T>
     {
-        Task SendAsync(ReadOnlyMemory<T> toSend);
+        Task ConsumeAsync(ReadOnlyMemory<T> toConsume);
     }
 
-    interface IConnectable<T>
+    interface IProducer<T>
     {
-        void ConnectDown(IConnection<T> newDown);
+        void AttachConsumer(IConsumer<T> newConsumer);
     }
 
-    class BufferBlockConnection<T> : IConnection<T>, IConnectable<T> 
+    interface IConsumer2<T>
     {
-        IConnection<T> Down;
+        Task ConsumeFromAsync(IProducer2<T> producer);
+    }
+
+    interface IProducer2<T>
+    {
+        Task<(IProducer2<T>,T)> GetAsync();
+    }
+
+    class ExtraProducer2<T> : IProducer2<T>
+    {
+        Task<(IProducer2<T>, T)> getTask;
+        
+        public ExtraProducer2(IProducer2<T> nextProducer, T data)
+        {
+            getTask = Task.FromResult<(IProducer2<T>, T)>((nextProducer, data));
+        }
+
+        public Task<(IProducer2<T>, T)> GetAsync() 
+            => getTask;        
+    }
+
+    interface IConsumer3<T>
+    {
+        Task ConsumeFromAsync(IProducer3<T> producer);
+    }
+
+    interface IProducer3<T>
+    {
+        Task<IProducer3<T>> NextAsync();
+        Task<T> GetCurrentDataAsync();
+    }
+
+    class ExtraProducer3<T> : IProducer3<T>
+    {
+        Task<T> Data;
+        Task<IProducer3<T>> NextProducer;
+
+        public ExtraProducer3(IProducer3<T> nextProducer, T data)
+        {
+            Data = Task.FromResult(data);
+            NextProducer = Task.FromResult(nextProducer);
+        }
+
+        public Task<T> GetCurrentDataAsync()
+            => Data;
+
+        public Task<IProducer3<T>> NextAsync()
+            => NextProducer;
+    }
+
+
+    class BufferBlockConnection<T> : IConsumer<T>, IProducer<T> 
+    {
+        IConsumer<T> Down;
         BufferBlock<ReadOnlyMemory<T>> OutBufferBlock = new BufferBlock<ReadOnlyMemory<T>>();
 
         Task SendLoopTask;
         TaskCompletionSource<bool> TCS_Shutdown = new System.Threading.Tasks.TaskCompletionSource<bool>();
 
-        public void ConnectDown(IConnection<T> newDown)
+        public void AttachConsumer(IConsumer<T> newDown)
         {
             Down = newDown;
         }
 
-        public Task SendAsync(ReadOnlyMemory<T> toSend)
+        public Task ConsumeAsync(ReadOnlyMemory<T> toSend)
         {
             if (SendLoopTask == null)
             {
@@ -91,7 +144,7 @@ namespace Gda.Streams
                             return new ReadOnlyMemory<T>(buffer, 0, pos);
                         }
 
-                        await Down.SendAsync(_concat());
+                        await Down.ConsumeAsync(_concat());
                     }
                 }
                 catch
@@ -102,23 +155,23 @@ namespace Gda.Streams
         }
     }
 
-    class SocketConnectionOut : IConnection<byte>
+    class SocketConnectionOut : IConsumer<byte>
     {
         public Socket Socket;
         
-        public async Task SendAsync(ReadOnlyMemory<byte> toSend)
+        public async Task ConsumeAsync(ReadOnlyMemory<byte> toSend)
         {
             await Socket.SendAsync(toSend, SocketFlags.None);
         }
     }
 
-    class SocketConnectionIn : IConnectable<byte>
+    class SocketConnectionIn : IProducer<byte>
     {
         public Socket Socket;
 
-        IConnection<byte> Down;
+        IConsumer<byte> Down;
 
-        public void ConnectDown(IConnection<byte> newDown)
+        public void AttachConsumer(IConsumer<byte> newDown)
         {
             Down = newDown;
         }
@@ -133,16 +186,16 @@ namespace Gda.Streams
                 do 
                 {
                     readBytes = await Socket.ReceiveAsync(bufferMem, SocketFlags.None);
-                    await Down.SendAsync(bufferMem.Slice(0,readBytes));
+                    await Down.ConsumeAsync(bufferMem.Slice(0,readBytes));
                 } while (readBytes > 0);
             });
         }
     }
 
-    class SocketSource : IConnectable<Socket>
+    class SocketSource : IProducer<Socket>
     {
-        IConnection<Socket> Down;
-        public void ConnectDown(IConnection<Socket> newDown)
+        IConsumer<Socket> Down;
+        public void AttachConsumer(IConsumer<Socket> newDown)
         {
             Down = newDown;
         }
@@ -164,16 +217,16 @@ namespace Gda.Streams
                     var asocket = await lSocket.AcceptAsync();
                     var down = Down;
                     if (down != null)
-                        _ = down.SendAsync(new ReadOnlyMemory<Socket>(new Socket[] { asocket }));
+                        _ = down.ConsumeAsync(new ReadOnlyMemory<Socket>(new Socket[] { asocket }));
                 }
             });
         }
     }
 
-    class SocketSourceClient : IConnectable<Socket>
+    class SocketSourceClient : IProducer<Socket>
     {
-        IConnection<Socket> Down;
-        public void ConnectDown(IConnection<Socket> newDown)
+        IConsumer<Socket> Down;
+        public void AttachConsumer(IConsumer<Socket> newDown)
         {
             Down = newDown;
         }
@@ -190,28 +243,28 @@ namespace Gda.Streams
                 await socket.ConnectAsync(new IPEndPoint(IPAddress.Parse("192.168.178.59"), 1704));
                 var down = Down;
                 if (down != null)
-                    _ = down.SendAsync(new ReadOnlyMemory<Socket>(new Socket[] { socket }));
+                    _ = down.ConsumeAsync(new ReadOnlyMemory<Socket>(new Socket[] { socket }));
             });
         }
     }
 
-    class SocketConsumer : IConnection<Socket>, IConnectable<(SocketConnectionIn, SocketConnectionOut)>
+    class SocketConsumer : IConsumer<Socket>, IProducer<(SocketConnectionIn, SocketConnectionOut)>
     {
-        IConnection<(SocketConnectionIn, SocketConnectionOut)> Down;
+        IConsumer<(SocketConnectionIn, SocketConnectionOut)> Down;
 
-        public void ConnectDown(IConnection<(SocketConnectionIn, SocketConnectionOut)> newDown)
+        public void AttachConsumer(IConsumer<(SocketConnectionIn, SocketConnectionOut)> newDown)
         {
             Down = newDown;
         }
 
-        public Task SendAsync(ReadOnlyMemory<Socket> toSend)
+        public Task ConsumeAsync(ReadOnlyMemory<Socket> toSend)
         {
             foreach(var socket in toSend.ToArray())
             {
                 Console.WriteLine($"new Socket from {socket.RemoteEndPoint.ToString()}");
                 var down = Down;
                 if (down != null)
-                    _ = down.SendAsync(new ReadOnlyMemory<(SocketConnectionIn, SocketConnectionOut)>( new (SocketConnectionIn, SocketConnectionOut)[] 
+                    _ = down.ConsumeAsync(new ReadOnlyMemory<(SocketConnectionIn, SocketConnectionOut)>( new (SocketConnectionIn, SocketConnectionOut)[] 
                         { (new SocketConnectionIn() {Socket = socket}, new SocketConnectionOut() {Socket = socket})  }));
                 else
                     socket.Close();
